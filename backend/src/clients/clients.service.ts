@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { PrismaService } from 'src/utils/prisma.service';
@@ -11,338 +7,207 @@ import { ClientsWithPayoutBetweenDto } from './dto/clientsWithPayoutBetween.dto'
 @Injectable()
 export class ClientsService {
   constructor(private db: PrismaService) {}
+
   async create(body: CreateClientDto) {
-    const checkExistPassport = await this.db.client.findFirst({
-      where: { passport_data: body?.passport_data },
-    });
-    if (checkExistPassport) {
-      throw new ConflictException('Клиент с таким паспортом существует');
-    }
+    const client = await this.db.$queryRaw`
+      INSERT INTO client (surname, name, lastname, birthday, passport_data, salary, workplace, address, phone_number)
+      VALUES (
+        ${body.surname}, 
+        ${body.name}, 
+        ${body.lastname}, 
+        ${new Date(body.birthday)}, 
+        ${body.passport_data}, 
+        ${body.salary}, 
+        ${body.workplace}, 
+        ${body.address}, 
+        ${body.phone_number}
+      )
+      RETURNING *
+    `;
 
-    const client = await this.db.client.create({
-      data: {
-        surname: body.surname,
-        name: body.name,
-        lastname: body.lastname,
-        birthday: new Date(body.birthday),
-        passport_data: body.passport_data,
-        salary: body.salary,
-        workplace: body.workplace,
-        address: body.address,
-        phone_number: body.phone_number,
-      },
-    });
-
-    return client;
+    return client[0];
   }
 
   async findAll() {
-    const clientsWithSums = await this.db.client.findMany({
-      include: {
-        contract: {
-          select: {
-            monthly_payment: true,
-          },
-        },
-      },
-    });
-
-    return clientsWithSums;
+    return this.db.$queryRaw`
+      SELECT c.*, SUM(co.monthly_payment) as total_payout
+      FROM client c
+      JOIN contract co ON c.client_code = co.client_code
+      GROUP BY c.client_code
+    `;
   }
 
   async findOne(id: number) {
-    const client = await this.db.client.findFirst({
-      where: { client_code: id },
-    });
-
-    if (!client) {
-      throw new NotFoundException('Клиент не найден');
-    }
-    return client;
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE client_code = ${id}
+    `;
   }
 
   async update(id: number, body: UpdateClientDto) {
-    const updatedUser = await this.db.client.update({
-      where: { client_code: id },
-      data: {
-        surname: body.surname,
-        name: body.name,
-        lastname: body.lastname,
-        birthday: new Date(body.birthday),
-        passport_data: body.passport_data,
-        salary: body.salary,
-        workplace: body.workplace,
-        address: body.address,
-        phone_number: body.phone_number,
-      },
-    });
-    if (!updatedUser) {
-      throw new NotFoundException('User not found');
-    }
-    return updatedUser;
+    const updatedUser = await this.db.$queryRaw`
+      UPDATE client
+      SET
+        surname = ${body.surname},
+        name = ${body.name},
+        lastname = ${body.lastname},
+        birthday = ${new Date(body.birthday)},
+        passport_data = ${body.passport_data},
+        salary = ${body.salary},
+        workplace = ${body.workplace},
+        address = ${body.address},
+        phone_number = ${body.phone_number}
+      WHERE client_code = ${id}
+      RETURNING *
+    `;
+
+    return updatedUser[0];
   }
 
   async remove(id: number) {
-    const client = await this.db.client.findUnique({
-      where: { client_code: id },
-      include: { contract: true },
-    });
-
-    if (client) {
-      if (client.contract.length > 0) {
-        throw new ConflictException(
-          `Клиент ${
-            client.surname + ' ' + client.name
-          } имеет активные кредиты. Его нельзя удалить. (Сначала удалите кредиты связанные с этим клиентом)`,
-        );
-      }
-
-      const deletedClient = await this.db.client.delete({
-        where: { client_code: id },
-      });
-      return `Клиент ${
-        deletedClient.surname + ' ' + deletedClient.name
-      } успешно удален, и кредиты, связанные с ним, также удалены.`;
-    }
-
-    throw new NotFoundException(`Клиент ${id} не найден.`);
+    return this.db.$queryRaw`
+      DELETE FROM client WHERE client_code = ${id}
+    `;
   }
 
-  // 2
   async findUniqueClientAddress() {
-    return this.db.client.findMany({
-      distinct: ['address'],
-    });
+    return this.db.$queryRaw`
+      SELECT DISTINCT address FROM client
+    `;
   }
 
-  // 3
   async findFirst10Clients() {
-    return this.db.client.findMany({
-      take: 10,
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      LIMIT 10
+    `;
   }
 
-  // 4
   async findLast15Clients() {
-    return this.db.client.findMany({
-      take: -15,
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      ORDER BY client_code DESC
+      LIMIT 15
+    `;
   }
 
-  // 5
   async averagePayout() {
-    return this.db.$queryRaw`SELECT AVG(monthly_payment) FROM contract`;
+    return this.db.$queryRaw`
+      SELECT AVG(monthly_payment) FROM contract
+    `;
   }
 
-  // 5
   async maxPayout() {
-    return this.db.$queryRaw`SELECT MAX(monthly_payment) FROM contract`;
+    return this.db.$queryRaw`
+      SELECT MAX(monthly_payment) FROM contract
+    `;
   }
 
-  // 5
   async minPayout() {
-    return this.db.$queryRaw`SELECT MIN(monthly_payment) FROM contract`;
+    return this.db.$queryRaw`
+      SELECT MIN(monthly_payment) FROM contract
+    `;
   }
 
-  // 6
-  // 6.1
   async findClientById(clientId: number) {
-    return this.db.client.findUnique({
-      where: {
-        client_code: clientId,
-      },
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE client_code = ${clientId}
+    `;
   }
 
-  // 6.3
   async findClientsByNamePattern(pattern: string) {
-    return this.db.client.findMany({
-      where: {
-        OR: [
-          {
-            name: {
-              contains: pattern,
-              mode: 'insensitive',
-            },
-          },
-          {
-            surname: {
-              contains: pattern,
-              mode: 'insensitive',
-            },
-          },
-          {
-            lastname: {
-              contains: pattern,
-              mode: 'insensitive',
-            },
-          },
-          {
-            address: {
-              contains: pattern,
-              mode: 'insensitive',
-            },
-          },
-          {
-            phone_number: {
-              contains: pattern,
-              mode: 'insensitive',
-            },
-          },
-          {
-            passport_data: {
-              contains: pattern,
-              mode: 'insensitive',
-            },
-          },
-        ],
-      },
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE 
+        name ILIKE '%${pattern}%' OR
+        surname ILIKE '%${pattern}%' OR
+        lastname ILIKE '%${pattern}%' OR
+        address ILIKE '%${pattern}%' OR
+        phone_number ILIKE '%${pattern}%' OR
+        passport_data ILIKE '%${pattern}%'
+    `;
   }
-  // 6.4
+
   async findClientsWithAddressAndNoPhoneNumber() {
-    return this.db.client.findMany({
-      where: {
-        AND: [
-          {
-            address: {
-              not: null, // Адрес указан
-            },
-          },
-          {
-            phone_number: null, // Паспортные данные не указаны
-          },
-        ],
-      },
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE 
+        address IS NOT NULL AND
+        phone_number IS NULL
+    `;
   }
 
   async findClientsWithAddressOrPhoneNumber() {
-    return this.db.client.findMany({
-      where: {
-        OR: [
-          {
-            address: {
-              not: null, // Адрес указан
-            },
-          },
-          {
-            phone_number: {
-              not: null, // Паспортные данные указаны
-            },
-          },
-        ],
-      },
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE 
+        address IS NOT NULL OR
+        phone_number IS NOT NULL
+    `;
   }
 
   async findClientsWithoutAddressOrPhoneNumber() {
-    const clients = await this.db.client.findMany({
-      where: {
-        NOT: [
-          {
-            address: null, // Адрес не указан
-            phone_number: null, // Паспортные данные не указаны
-          },
-        ],
-      },
-    });
-
-    return clients.length > 0 ? [clients[0]] : null;
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE 
+        address IS NULL AND
+        phone_number IS NULL
+    `;
   }
 
   async Exists(address: string) {
-    const clients = await this.db.client.findMany({
-      where: {
-        address,
-      },
-      include: {
-        contract: {
-          select: {
-            monthly_payment: true,
-          },
-        },
-      },
-    });
-
-    if (!clients) {
-      throw new NotFoundException('Клиент не найден');
-    }
-
-    return clients.length > 0 ? [clients[0]] : 'Не найдено';
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE 
+        address = ${address}
+    `;
   }
-  // 6.5
+
   async findClientsWithPhoneNumber() {
-    return this.db.client.findMany({
-      where: {
-        phone_number: {
-          not: null, // Имеется номер телефона
-        },
-      },
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      WHERE 
+        phone_number IS NOT NULL
+    `;
   }
 
-  // 7
   async clientsWithPayoutBetween(body: ClientsWithPayoutBetweenDto) {
     return this.db.$queryRaw`
-    SELECT c.*, SUM(co.monthly_payment) as total_payout
-    FROM client c
-    JOIN contract co ON c.client_code = co.client_code
-    GROUP BY c.client_code
-    HAVING SUM(co.monthly_payment) BETWEEN ${body.min} AND ${body.max}`;
+      SELECT c.*, SUM(co.monthly_payment) as total_payout
+      FROM client c
+      JOIN contract co ON c.client_code = co.client_code
+      GROUP BY c.client_code
+      HAVING SUM(co.monthly_payment) BETWEEN ${body.min} AND ${body.max}
+    `;
   }
 
-  // 8
   async findClientsSorted() {
-    return this.db.client.findMany({
-      orderBy: [
-        {
-          name: 'asc',
-        },
-        {
-          client_code: 'desc',
-        },
-      ],
-    });
-  }
-  // 9
-  async countContractsPerClient() {
-    return this.db.client.findMany({
-      select: {
-        client_code: true,
-        name: true,
-        surname: true,
-        lastname: true,
-        address: true,
-        phone_number: true,
-        passport_data: true,
-        salary: true,
-        workplace: true,
-        birthday: true,
-        _count: {
-          select: {
-            contract: true,
-          },
-        },
-      },
-      orderBy: {
-        contract: {
-          _count: 'desc',
-        },
-      },
-    });
+    return this.db.$queryRaw`
+      SELECT * FROM client
+      ORDER BY name ASC, client_code DESC
+    `;
   }
 
-  //10
+  async countContractsPerClient() {
+    return this.db.$queryRaw`
+      SELECT c.client_code, c.name, c.surname, c.lastname, c.address, c.phone_number, c.passport_data, c.salary, c.workplace, c.birthday, COUNT(co.client_code) as contracts_count
+      FROM client c
+      LEFT JOIN contract co ON c.client_code = co.client_code
+      GROUP BY c.client_code, c.name, c.surname, c.lastname, c.address, c.phone_number, c.passport_data, c.salary, c.workplace, c.birthday
+      ORDER BY contracts_count DESC
+    `;
+  }
+
   async findClientsWithNamesStartingAOrB() {
     return this.db.$queryRaw`
-      (SELECT * FROM client WHERE name LIKE 'А%')
+      (SELECT * FROM client WHERE name ILIKE 'А%')
       EXCEPT
-      (SELECT * FROM client WHERE name LIKE 'Б%')
-      ORDER BY name ASC`;
+      (SELECT * FROM client WHERE name ILIKE 'Б%')
+      ORDER BY name ASC
+    `;
   }
 
-  //14
   async findClientsCelebratingEveryFiveYearsAnniversaryNextMonth() {
     const today = new Date();
     const nextMonth = today.getMonth() + 1;
@@ -350,8 +215,8 @@ export class ClientsService {
     const formattedDate = `${nextMonthYear}-${String(
       (nextMonth % 12) + 1,
     ).padStart(2, '0')}-01`;
-    console.log(formattedDate);
-    const query = `
+
+    return this.db.$queryRaw`
       SELECT 
         client_code,
         name,
@@ -368,27 +233,7 @@ export class ClientsService {
       WHERE
         EXTRACT(MONTH FROM birthday) = ${(nextMonth % 12) + 1} AND
         (EXTRACT(YEAR FROM age(timestamp '${formattedDate}', birthday)) + 1) % 5 = 0
+      ORDER BY next_anniversary_year ASC
     `;
-
-    const clientsCelebratingAnniversary = (await this.db.$queryRawUnsafe(
-      query,
-    )) as any[];
-
-    const clientsWithNextAnniversaryDate = clientsCelebratingAnniversary.map(
-      (client) => {
-        const nextAnniversaryDateString = `${
-          client.next_anniversary_year
-        }-${String(client.birth_month).padStart(2, '0')}-${String(
-          client.birth_day,
-        ).padStart(2, '0')}`;
-
-        return {
-          ...client,
-          next_anniversary_date: `${nextAnniversaryDateString}T00:00:00.000Z`,
-        };
-      },
-    );
-
-    return clientsWithNextAnniversaryDate;
   }
 }

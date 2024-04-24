@@ -8,7 +8,7 @@ import {
   Delete,
   Query,
 } from '@nestjs/common';
-import { ContractsService } from './contracts.service';
+import { ContractsService } from './dto/contracts.service.dto';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractDto } from './dto/update-contract.dto';
 import { ApiTags } from '@nestjs/swagger';

@@ -7,7 +7,7 @@ import {
   Param,
   Delete,
 } from '@nestjs/common';
-import { CreditService } from './credit.service';
+import { CreditService } from './dto/credit.service.dto';
 import { CreateCreditDto } from './dto/create-credit.dto';
 import { UpdateCreditDto } from './dto/update-credit.dto';
 

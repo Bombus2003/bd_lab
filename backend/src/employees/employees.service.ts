@@ -3,73 +3,76 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateEmployeeDto } from './dto/create-employee.dto';
-import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { PrismaService } from 'src/utils/prisma.service';
 
 @Injectable()
 export class EmployeesService {
   constructor(private db: PrismaService) {}
-  async create(body: CreateEmployeeDto) {
-    const checkExistPhoneNumber = await this.db.employee.findFirst({
-      where: { phone_number: body?.phone_number },
-    });
+
+  async create(body) {
+    const checkExistPhoneNumber = await this.db.$queryRaw`
+      SELECT * FROM employee WHERE phone_number = ${body?.phone_number}
+    `;
+
     if (checkExistPhoneNumber) {
       throw new ConflictException(
         'Для создания сотрудника используйте уникальный номер телефона',
       );
     }
-    const employer = await this.db.employee.create({
-      data: { ...body },
-    });
 
-    return employer;
+    const employer = await this.db.$queryRaw`
+      INSERT INTO employee (${Object.keys(body).join(', ')})
+      VALUES (${Object.values(body)
+        .map((value) => `'${value}'`)
+        .join(', ')})
+      RETURNING *
+    `;
+    return employer[0];
   }
 
   async findAll() {
-    const employees = await this.db.employee.findMany();
-    return employees;
+    return this.db.$queryRaw`SELECT * FROM employee`;
   }
 
   async findOne(id: number) {
-    const employer = await this.db.employee.findFirst({
-      where: { employee_code: id },
-    });
-    return employer;
+    return this.db
+      .$queryRaw`SELECT * FROM employee WHERE employee_code = ${id}`;
   }
 
-  async update(id: number, body: UpdateEmployeeDto) {
-    const updatedEmployer = await this.db.employee.update({
-      where: { employee_code: id },
-      data: { ...body },
-    });
+  async update(id: number, body) {
+    const updatedEmployer = await this.db.$queryRaw`
+      UPDATE employee
+      SET ${Object.keys(body).map((key) => `${key} = '${body[key]}'`)}
+      WHERE employee_code = ${id}
+      RETURNING *
+    `;
     if (!updatedEmployer) {
       throw new NotFoundException('Employer not found');
     }
-    return updatedEmployer;
+    return updatedEmployer[0];
   }
 
   async remove(id: number) {
-    const employer = await this.db.employee.findUnique({
-      where: { employee_code: id },
-      include: { contract: true },
-    });
+    const employer = await this.db.$queryRaw`
+      SELECT * FROM employee WHERE employee_code = ${id}
+    `;
 
     if (employer) {
-      if (employer.contract.length > 0) {
+      if (employer[0].contract.length > 0) {
         throw new ConflictException(
           `Работодатель ${
-            employer.surname + ' ' + employer.name
-          } имеет активные кредиты. Его нельзя удалить. (Сначала удалите контракты связанные с этим работодателем)`,
+            employer[0].surname + ' ' + employer[0].name
+          } имеет активные кредиты. Его нельзя удалить.`,
         );
       }
 
-      const deletedEmployer = await this.db.employee.delete({
-        where: { employee_code: id },
-      });
+      await this.db.$queryRaw`
+        DELETE FROM employee WHERE employee_code = ${id}
+      `;
+
       return `Работодатель ${
-        deletedEmployer.surname + ' ' + deletedEmployer.name
-      } успешно удален, и контракты, связанные с ним, также удалены.`;
+        employer[0].surname + ' ' + employer[0].name
+      } успешно удален`;
     }
 
     throw new NotFoundException(`Работодатель ${id} не найден.`);
