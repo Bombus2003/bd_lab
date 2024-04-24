@@ -1,0 +1,60 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model client {
+  client_code   Int        @id @default(autoincrement())
+  surname       String     @db.VarChar(20)
+  name          String     @db.VarChar(15)
+  lastname      String     @db.VarChar(20)
+  birthday      DateTime?  @db.Date
+  passport_data String?    @unique @db.VarChar(11)
+  salary        Decimal    @db.Decimal(10, 2)
+  workplace     String?    @db.VarChar(100)
+  address       String?    @db.VarChar(100)
+  phone_number  String?    @db.VarChar(20)
+  contract      contract[]
+}
+
+model employee {
+  employee_code Int        @id @default(autoincrement())
+  surname       String     @db.VarChar(20)
+  name          String     @db.VarChar(15)
+  lastname      String     @db.VarChar(20)
+  position      String?    @db.VarChar(50)
+  phone_number  String?    @db.VarChar(20)
+  contract      contract[]
+}
+
+model credit {
+  credit_code     Int        @id @default(autoincrement())
+  credit_name     String     @db.VarChar(80)
+  min_amount      Decimal    @db.Decimal(10, 2)
+  max_amount      Decimal    @db.Decimal(10, 2)
+  min_credit_term Int
+  max_credit_term Int
+  interest_rate   Decimal    @db.Decimal(10, 2)
+  contract        contract[]
+}
+
+model contract {
+  contract_code   Int       @id @default(autoincrement())
+  client_code     Int?
+  employee_code   Int?
+  credit_code     Int?
+  contract_amount Decimal   @db.Decimal(10, 2)
+  contract_term   Int?
+  monthly_payment Decimal   @db.Decimal(10, 2)
+  creation_date   DateTime? @default(dbgenerated("CURRENT_DATE")) @db.Date
+  clients         client?   @relation(fields: [client_code], references: [client_code], onDelete: NoAction, onUpdate: NoAction)
+  employees       employee? @relation(fields: [employee_code], references: [employee_code], onDelete: NoAction, onUpdate: NoAction)
+  credit          credit?   @relation(fields: [credit_code], references: [credit_code], onDelete: NoAction, onUpdate: NoAction)
+}
